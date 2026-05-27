@@ -40,8 +40,8 @@ CONFIG = {
 
     # 必殺ゲージ
     "ult_cost": 100,
-    "sp_gain_on_attack": 10,     # 攻撃を出した側の増加量
-    "sp_gain_on_hit": 20,        # 被弾した側の増加量
+    "sp_gain_on_attack": 5,      # 攻撃を出した側の増加量
+    "sp_gain_on_hit": 10,        # 被弾した側の増加量
 
     # 必殺技：ブラックホール
     "blackhole_duration_sec": 7,
@@ -100,6 +100,7 @@ def make_player(x, is_p2, char=DEFAULT_CHAR):
         "char": char,
         "atkCd": 0, "atkAnim": 0, "hitAnim": 0,
         "frozen": 0, "isGuarding": False,
+        "ult_active": False,
         "keys": {}
     }
 
@@ -128,7 +129,8 @@ def on_join(data):
             "p1_sid": None, "p2_sid": None,
             "p1_char": DEFAULT_CHAR, "p2_char": "frog",
             "state": make_game_state(),
-            "spectators": []
+            "spectators": [],
+            "rematch": set()
         }
 
     room = rooms[room_id]
@@ -175,6 +177,31 @@ def on_input(data):
     elif player == 2:
         state["p2"]["keys"] = keys
 
+@socketio.on('rematch')
+def on_rematch(data):
+    room_id = data.get('room', 'default')
+    room = rooms.get(room_id)
+    if not room:
+        return
+    sid = request.sid
+    # 実プレイヤー（P1/P2）のみ再戦をリクエストできる
+    if sid not in (room["p1_sid"], room["p2_sid"]):
+        return
+    room.setdefault("rematch", set()).add(sid)
+
+    # 両者が「もう一度」を押したらリセットして再開
+    if room["p1_sid"] in room["rematch"] and room["p2_sid"] in room["rematch"]:
+        room["rematch"] = set()
+        room["state"] = make_game_state(room["p1_char"], room["p2_char"])
+        room["state"]["running"] = True
+        room["state"]["start_time"] = time.time()
+        socketio.emit('game_start', {}, room=room_id)
+        print(f"[Room {room_id}] Rematch started!")
+    else:
+        # まだ片方だけ → 相手を待っている状態を全員に通知
+        which = 1 if sid == room["p1_sid"] else 2
+        socketio.emit('rematch_waiting', {'player': which}, room=room_id)
+
 @socketio.on('disconnect')
 def on_disconnect():
     sid = request.sid
@@ -204,14 +231,19 @@ def tick_room(room_id):
             pl["vx"] *= 0.8
             pl["isGuarding"] = False
         else:
-            if k.get("left"):
+            # ブラックホールに吸われている側は左右移動で抜け出せない
+            bh_target = bool(state["bh"]) and (pl["isP2"] == (state["bh"].get("caster") == "p1"))
+            if bh_target:
+                pl["vx"] *= 0.7
+            elif k.get("left"):
                 pl["vx"] = -CONFIG["move_speed"]; pl["facing"] = -1
             elif k.get("right"):
                 pl["vx"] = CONFIG["move_speed"]; pl["facing"] = 1
             else:
                 pl["vx"] *= 0.7
 
-            if k.get("jump") and pl["onGround"]:
+            # ブラックホールに吸われている側はジャンプもできない
+            if k.get("jump") and pl["onGround"] and not bh_target:
                 pl["vy"] = CONFIG["jump_vy"]
 
             pl["isGuarding"] = bool(k.get("guard"))
@@ -225,7 +257,7 @@ def tick_room(room_id):
                 do_attack(pl, opp, CONFIG["strong_dmg"], CONFIG["strong_cd"], state, room_id)
 
             # 必殺技
-            if k.get("ult") and pl["atkCd"] == 0 and pl["sp"] >= CONFIG["ult_cost"]:
+            if k.get("ult") and pl["atkCd"] == 0 and pl["sp"] >= CONFIG["ult_cost"] and not pl["ult_active"]:
                 do_ult(pl, opp, state, room_id)
 
         # 物理
@@ -275,9 +307,11 @@ def do_attack(atk, def_, dmg, cd, state, room_id):
     if def_["isGuarding"]:
         d = max(1, d // CONFIG["guard_divisor"])
     def_["hp"] = max(0, def_["hp"] - d)
-    # ゲージは相手にダメージを与えたときだけ溜まる
-    atk["sp"] = min(CONFIG["ult_cost"], atk["sp"] + CONFIG["sp_gain_on_attack"])
-    def_["sp"] = min(CONFIG["ult_cost"], def_["sp"] + CONFIG["sp_gain_on_hit"])
+    # ゲージは相手にダメージを与えたときだけ溜まる（必殺発動中の本人は溜まらない＝多重発動防止）
+    if not atk["ult_active"]:
+        atk["sp"] = min(CONFIG["ult_cost"], atk["sp"] + CONFIG["sp_gain_on_attack"])
+    if not def_["ult_active"]:
+        def_["sp"] = min(CONFIG["ult_cost"], def_["sp"] + CONFIG["sp_gain_on_hit"])
     def_["hitAnim"] = 8
 
     # ダメージ量に応じたノックバック（吹っ飛び）
@@ -294,6 +328,7 @@ def do_attack(atk, def_, dmg, cd, state, room_id):
 
 def do_ult(atk, opp, state, room_id):
     atk["sp"] = 0
+    atk["ult_active"] = True   # 必殺中は発動者のゲージは溜まらない（多重発動防止）
     atk["atkCd"] = 10
     atk_num = 2 if atk["isP2"] else 1
     opp_num = 1 if atk["isP2"] else 2
@@ -322,6 +357,7 @@ def do_ult(atk, opp, state, room_id):
                     return
             if room_id in rooms:
                 rooms[room_id]["state"]["bh"] = None
+                rooms[room_id]["state"][caster_key]["ult_active"] = False
                 socketio.emit('bh_end', {}, room=room_id)
         threading.Thread(target=bh_tick, daemon=True).start()
     elif ult == "the_world":
@@ -332,12 +368,15 @@ def do_ult(atk, opp, state, room_id):
             time.sleep(CONFIG["the_world_duration_sec"])
             if room_id in rooms:
                 rooms[room_id]["state"][opp_key]["frozen"] = 0
+                rooms[room_id]["state"][caster_key]["ult_active"] = False
                 rooms[room_id]["state"]["world"] = None
                 socketio.emit('world_end', {}, room=room_id)
         threading.Thread(target=world_end, daemon=True).start()
 
 def end_game(winner, state, room_id):
     state["running"] = False
+    if room_id in rooms:
+        rooms[room_id]["rematch"] = set()
     winner_name = char_name(winner.get("char", DEFAULT_CHAR))
     duration = int(time.time() - state["start_time"]) if state["start_time"] else 0
     st = rooms.get(room_id, {}).get("state", {})
