@@ -31,7 +31,10 @@ html, body { width: 100%; height: 100%; background: #0a0a14; overflow: hidden; f
 .screen.active { display: flex; }
 
 /* ===== タイトル ===== */
-#title-screen { background: #0d0d1a; color: #fff; gap: 20px; padding: 20px; }
+#title-screen { background: #0d0d1a; color: #fff; gap: 20px; padding: 20px; overflow-y: auto; justify-content: flex-start; }
+/* 収まるときは中央寄せ、溢れたら上から全部スクロールできる */
+#title-screen > :first-child, #wait-screen > :first-child { margin-top: auto; }
+#title-screen > :last-child, #wait-screen > :last-child { margin-bottom: auto; }
 #title-screen h1 { font-size: clamp(20px, 5vw, 32px); letter-spacing: 3px; }
 .char-cards { display: flex; gap: 24px; flex-wrap: wrap; justify-content: center; }
 .char-card { text-align: center; background: rgba(255,255,255,0.05); border-radius: 10px; padding: 14px 18px; cursor: pointer; border: 2px solid transparent; transition: border-color 0.1s, background 0.1s; }
@@ -41,7 +44,7 @@ html, body { width: 100%; height: 100%; background: #0a0a14; overflow: hidden; f
 .char-card .skill { font-size: 11px; color: #aaa; }
 
 /* ===== 待機室 ===== */
-#wait-screen { background: #0d0d1a; color: #fff; gap: 16px; }
+#wait-screen { background: #0d0d1a; color: #fff; gap: 16px; overflow-y: auto; padding: 20px; justify-content: flex-start; }
 #wait-screen h2 { font-size: 20px; }
 #room-display { font-size: 28px; font-weight: 700; color: #f39c12; letter-spacing: 4px; background: rgba(255,255,255,0.05); padding: 12px 28px; border-radius: 8px; }
 #wait-msg { color: #aaa; font-size: 14px; }
@@ -136,6 +139,18 @@ html, body { width: 100%; height: 100%; background: #0a0a14; overflow: hidden; f
   #vpad { padding: 4px 8px; gap: 4px; }
   .pad-btn { width: clamp(36px, 9vh, 48px); height: clamp(36px, 9vh, 48px); }
   .pad-btn.ult { width: clamp(40px, 10vh, 54px); height: clamp(40px, 10vh, 54px); }
+
+  /* タイトル/待機画面を全体的に小さく（横画面の小型端末でボタンが切れないように） */
+  #title-screen { gap: 10px; padding: 12px; }
+  #title-screen h1 { font-size: clamp(18px, 4.5vw, 26px); letter-spacing: 2px; }
+  .char-cards { gap: 12px; }
+  .char-card { padding: 8px 12px; }
+  .char-card .icon { font-size: 22px; }
+  .char-card .icon svg { width: 26px; height: 26px; }
+  .char-card .cname { font-size: 12px; margin: 4px 0 1px; }
+  .char-card .skill { font-size: 10px; }
+  #title-screen input, #title-screen .btn { padding: 9px !important; font-size: 14px; }
+  #wait-screen { gap: 10px; padding: 12px; }
 }
 
 /* ===== 縦向き警告（横画面でプレイ） ===== */

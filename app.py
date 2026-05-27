@@ -29,6 +29,7 @@ CONFIG = {
 
     # 攻撃
     "attack_range": 95,
+    "attack_v_range": 55,        # 攻撃が当たる縦方向の差（px）。これより高低差があると当たらない
     "weak_dmg": 5,
     "weak_cd": 20,
     "strong_dmg": 10,
@@ -267,8 +268,9 @@ def tick_room(room_id):
 def do_attack(atk, def_, dmg, cd, state, room_id):
     atk["atkCd"] = cd; atk["atkAnim"] = cd
     dist = abs((atk["x"] + 21) - (def_["x"] + 21))
-    if dist > CONFIG["attack_range"]:
-        return  # 空振り：ゲージは溜まらない
+    v_dist = abs((atk["y"] + 25) - (def_["y"] + 25))
+    if dist > CONFIG["attack_range"] or v_dist > CONFIG["attack_v_range"]:
+        return  # 空振り：横が遠い／高低差が大きいとゲージも溜まらない
     d = dmg
     if def_["isGuarding"]:
         d = max(1, d // CONFIG["guard_divisor"])
