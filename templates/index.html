@@ -50,7 +50,7 @@ html, body { width: 100%; height: 100%; background: #0a0a14; overflow: hidden; f
 /* ===== ゲーム画面 ===== */
 #game-screen { background: #1a1a2e; padding: 0; justify-content: flex-start; }
 
-#hud { width: 100%; display: flex; justify-content: space-between; align-items: flex-start; padding: 8px 12px; background: #0d0d1a; flex-shrink: 0; }
+#hud { position: absolute; top: 0; left: 0; width: 100%; display: flex; justify-content: space-between; align-items: flex-start; padding: 6px 12px; background: linear-gradient(to bottom, rgba(13,13,26,0.88), rgba(13,13,26,0)); z-index: 10; pointer-events: none; }
 .hud-side { display: flex; flex-direction: column; gap: 3px; width: 46%; }
 .hud-side.right { align-items: flex-end; }
 .char-name { font-size: 10px; font-weight: 700; color: #ccc; }
@@ -62,11 +62,12 @@ html, body { width: 100%; height: 100%; background: #0a0a14; overflow: hidden; f
 .ult-ready { font-size: 9px; color: #f39c12; font-weight: 700; visibility: hidden; }
 .status-text { font-size: 9px; color: #f39c12; min-height: 12px; }
 
-#canvas-wrap { position: relative; width: 100%; aspect-ratio: 800 / 300; max-height: 100%; flex: 0 1 auto; min-height: 0; overflow: hidden; }
+#canvas-wrap { position: absolute; inset: 0; width: 100%; height: 100%; overflow: hidden; }
 #canvas { display: block; width: 100%; height: 100%; }
 
 /* ===== バーチャルパッド ===== */
-#vpad { width: 100%; background: #0a0a18; padding: 8px 6px; margin-top: auto; display: flex; justify-content: space-between; align-items: center; flex-shrink: 0; gap: 4px; }
+#vpad { position: absolute; bottom: 0; left: 0; width: 100%; background: linear-gradient(to top, rgba(10,10,24,0.55), rgba(10,10,24,0)); padding: 8px 10px; display: flex; justify-content: space-between; align-items: flex-end; z-index: 10; gap: 4px; pointer-events: none; }
+#vpad .pad-left, #vpad .pad-right, #vpad #pad-center { pointer-events: auto; }
 
 .pad-left { display: flex; flex-direction: column; align-items: center; gap: 4px; }
 .pad-arrows { display: flex; gap: 4px; }
