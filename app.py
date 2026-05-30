@@ -226,9 +226,12 @@ def tick_room(room_id):
 
     for pl, opp in [(p1, p2), (p2, p1)]:
         k = pl["keys"]
-        if pl["frozen"] > 0:
+        is_frozen = pl["frozen"] > 0
+        if is_frozen:
+            # The World：完全停止（空中でもその瞬間の位置で止まる）
             pl["frozen"] -= 1
-            pl["vx"] *= 0.8
+            pl["vx"] = 0
+            pl["vy"] = 0
             pl["isGuarding"] = False
         else:
             # ブラックホールに吸われている側は左右移動で抜け出せない
@@ -260,33 +263,35 @@ def tick_room(room_id):
             if k.get("ult") and pl["atkCd"] == 0 and pl["sp"] >= CONFIG["ult_cost"] and not pl["ult_active"]:
                 do_ult(pl, opp, state, room_id)
 
-        # 物理
-        pl["vy"] += GRAVITY
-        pl["x"] += pl["vx"]
-        pl["y"] += pl["vy"]
-        pl["onGround"] = False
+        # 物理（停止中は計算をスキップして完全に静止させる）
+        if not is_frozen:
+            pl["vy"] += GRAVITY
+            pl["x"] += pl["vx"]
+            pl["y"] += pl["vy"]
+            pl["onGround"] = False
 
-        for pf in PLATFORMS:
-            if (pl["x"] + 42 > pf["x"] and pl["x"] < pf["x"] + pf["w"] and
-                    pl["y"] + 50 > pf["y"] and pl["y"] + 50 < pf["y"] + pf["h"] + 12 and pl["vy"] >= 0):
-                pl["y"] = pf["y"] - 50
-                pl["vy"] = 0
-                pl["onGround"] = True
+            for pf in PLATFORMS:
+                if (pl["x"] + 42 > pf["x"] and pl["x"] < pf["x"] + pf["w"] and
+                        pl["y"] + 50 > pf["y"] and pl["y"] + 50 < pf["y"] + pf["h"] + 12 and pl["vy"] >= 0):
+                    pl["y"] = pf["y"] - 50
+                    pl["vy"] = 0
+                    pl["onGround"] = True
 
-        if pl["y"] + 50 >= GROUND_Y:
-            pl["y"] = GROUND_Y - 50; pl["vy"] = 0; pl["onGround"] = True
+            if pl["y"] + 50 >= GROUND_Y:
+                pl["y"] = GROUND_Y - 50; pl["vy"] = 0; pl["onGround"] = True
 
-        pl["x"] = max(0, min(STAGE_W - 42, pl["x"]))
+            pl["x"] = max(0, min(STAGE_W - 42, pl["x"]))
 
-        for cd in ["atkCd", "atkAnim", "hitAnim"]:
-            if pl[cd] > 0:
-                pl[cd] -= 1
+            for cd in ["atkCd", "atkAnim", "hitAnim"]:
+                if pl[cd] > 0:
+                    pl[cd] -= 1
 
-    # ブラックホール引き寄せ（発動者ではなく相手だけを引き寄せる）
+    # ブラックホール引き寄せ（発動者ではなく相手だけを引き寄せる。停止中は効かない）
     if state["bh"]:
         cx = STAGE_W / 2
         target = p2 if state["bh"].get("caster") == "p1" else p1
-        target["vx"] += (cx - (target["x"] + 21)) * CONFIG["blackhole_pull_factor"]
+        if target["frozen"] <= 0:
+            target["vx"] += (cx - (target["x"] + 21)) * CONFIG["blackhole_pull_factor"]
 
     # 状態送信
     socketio.emit('state', {
