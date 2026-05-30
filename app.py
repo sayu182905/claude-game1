@@ -101,6 +101,7 @@ def make_player(x, is_p2, char=DEFAULT_CHAR):
         "atkCd": 0, "atkAnim": 0, "hitAnim": 0,
         "frozen": 0, "isGuarding": False,
         "ult_active": False,
+        "pending_kb_vx": 0, "pending_kb_vy": 0,  # 停止中に受けたノックバック（解除時に反映）
         "keys": {}
     }
 
@@ -227,6 +228,8 @@ def tick_room(room_id):
     for pl, opp in [(p1, p2), (p2, p1)]:
         k = pl["keys"]
         is_frozen = pl["frozen"] > 0
+        # ブラックホールに吸われている側か（移動・台への着地を無効化する）
+        bh_target = bool(state["bh"]) and (pl["isP2"] == (state["bh"].get("caster") == "p1"))
         if is_frozen:
             # The World：完全停止（空中でもその瞬間の位置で止まる）
             pl["frozen"] -= 1
@@ -235,7 +238,6 @@ def tick_room(room_id):
             pl["isGuarding"] = False
         else:
             # ブラックホールに吸われている側は左右移動で抜け出せない
-            bh_target = bool(state["bh"]) and (pl["isP2"] == (state["bh"].get("caster") == "p1"))
             if bh_target:
                 pl["vx"] *= 0.7
             elif k.get("left"):
@@ -265,17 +267,27 @@ def tick_room(room_id):
 
         # 物理（停止中は計算をスキップして完全に静止させる）
         if not is_frozen:
+            # 停止解除直後：停止中に溜まったノックバックをまとめて反映
+            if pl["pending_kb_vx"] or pl["pending_kb_vy"]:
+                pl["vx"] += pl["pending_kb_vx"]
+                pl["vy"] += pl["pending_kb_vy"]
+                pl["pending_kb_vx"] = 0
+                pl["pending_kb_vy"] = 0
+                pl["onGround"] = False
+
             pl["vy"] += GRAVITY
             pl["x"] += pl["vx"]
             pl["y"] += pl["vy"]
             pl["onGround"] = False
 
-            for pf in PLATFORMS:
-                if (pl["x"] + 42 > pf["x"] and pl["x"] < pf["x"] + pf["w"] and
-                        pl["y"] + 50 > pf["y"] and pl["y"] + 50 < pf["y"] + pf["h"] + 12 and pl["vy"] >= 0):
-                    pl["y"] = pf["y"] - 50
-                    pl["vy"] = 0
-                    pl["onGround"] = True
+            # ブラックホールに吸われている側は台に着地しない（勝手に台へ上がるのを防止）
+            if not bh_target:
+                for pf in PLATFORMS:
+                    if (pl["x"] + 42 > pf["x"] and pl["x"] < pf["x"] + pf["w"] and
+                            pl["y"] + 50 > pf["y"] and pl["y"] + 50 < pf["y"] + pf["h"] + 12 and pl["vy"] >= 0):
+                        pl["y"] = pf["y"] - 50
+                        pl["vy"] = 0
+                        pl["onGround"] = True
 
             if pl["y"] + 50 >= GROUND_Y:
                 pl["y"] = GROUND_Y - 50; pl["vy"] = 0; pl["onGround"] = True
@@ -321,9 +333,16 @@ def do_attack(atk, def_, dmg, cd, state, room_id):
 
     # ダメージ量に応じたノックバック（吹っ飛び）
     direction = 1 if (def_["x"] + 21) >= (atk["x"] + 21) else -1
-    def_["vx"] = direction * d * CONFIG["knockback_vx_factor"]
-    def_["vy"] = -d * CONFIG["knockback_vy_factor"]
-    def_["onGround"] = False
+    kb_vx = direction * d * CONFIG["knockback_vx_factor"]
+    kb_vy = -d * CONFIG["knockback_vy_factor"]
+    if def_["frozen"] > 0:
+        # The World停止中：ダメージは入るが、ノックバックは解除時にまとめて反映
+        def_["pending_kb_vx"] += kb_vx
+        def_["pending_kb_vy"] += kb_vy
+    else:
+        def_["vx"] = kb_vx
+        def_["vy"] = kb_vy
+        def_["onGround"] = False
 
     # ダメージイベント
     socketio.emit('hit', {"dmg": d, "target": 2 if def_["isP2"] else 1, "guarded": def_["isGuarding"]}, room=room_id)

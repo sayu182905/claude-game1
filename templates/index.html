@@ -78,6 +78,8 @@ html, body { width: 100%; height: 100%; background: #0a0a14; overflow: hidden; f
 
 .pad-right { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
 .pad-actions { display: flex; gap: 4px; }
+/* ジャンプは右側・弱/強の上段に配置（右端から1ボタン分ずらして弱と強の上に来るように） */
+.pad-jump { display: flex; margin-right: clamp(22px, 6vw, 30px); }
 .pad-ults { display: flex; gap: 4px; }
 
 .pad-btn {
@@ -285,7 +287,6 @@ html, body { width: 100%; height: 100%; background: #0a0a14; overflow: hidden; f
     <div class="pad-left">
       <div class="pad-arrows">
         <div class="pad-btn" id="btn-left" data-key="left">◀</div>
-        <div class="pad-btn jump" id="btn-jump" data-key="jump">↑</div>
         <div class="pad-btn" id="btn-right" data-key="right">▶</div>
       </div>
     </div>
@@ -294,6 +295,9 @@ html, body { width: 100%; height: 100%; background: #0a0a14; overflow: hidden; f
       <button id="mute-btn-pad" onclick="toggleMute()">🔊</button>
     </div>
     <div class="pad-right">
+      <div class="pad-jump">
+        <div class="pad-btn jump" id="btn-jump" data-key="jump">↑</div>
+      </div>
       <div class="pad-actions">
         <div class="pad-btn guard" id="btn-guard" data-key="guard">🛡</div>
         <div class="pad-btn weak" id="btn-weak" data-key="weak">弱</div>
@@ -643,7 +647,7 @@ function drawPlayer(pl,sx,sy,s){
     ctx.beginPath(); ctx.ellipse(px+pw*0.67,py+ph-cr*1.2,cr*0.08,cr*0.1,0,0,Math.PI*2); ctx.fill();
     ctx.fillStyle='#880000';
     for(let i=0;i<3;i++){ctx.beginPath();ctx.ellipse(px+pw*(0.3+i*0.2),py+ph-cr*0.4+4*s,2.5*s,5*s,0,0,Math.PI*2);ctx.fill();}
-    if(pl.atkAnim>0){ctx.fillStyle='rgba(255,100,100,0.45)';ctx.fillRect(px+(pl.facing>0?pw:-pw*0.8),py,pw*0.8,ph);}
+    if(pl.atkAnim>0){drawPunch(px,py,pw,ph,pl.facing,'#a31818','#e23b3b',s);}
     if(pl.isGuarding){ctx.strokeStyle='rgba(255,200,200,0.8)';ctx.lineWidth=3*s;ctx.beginPath();ctx.arc(px+pw/2,py+ph/2,pw*0.8,0,Math.PI*2);ctx.stroke();}
   } else {
     ctx.fillStyle=pl.isGuarding?'#88ccff':'#2a7a2a';
@@ -670,7 +674,7 @@ function drawPlayer(pl,sx,sy,s){
     ctx.fillStyle='#1a5c1a';
     ctx.fillRect(px+pw*0.25,py+ph*0.88,pw*0.2,ph*0.12);
     ctx.fillRect(px+pw*0.55,py+ph*0.88,pw*0.2,ph*0.12);
-    if(pl.atkAnim>0){ctx.fillStyle='rgba(50,200,100,0.45)';ctx.fillRect(px+(pl.facing>0?pw:-pw*0.8),py,pw*0.8,ph);}
+    if(pl.atkAnim>0){drawPunch(px,py,pw,ph,pl.facing,'#1a5c1a','#3db33d',s);}
     if(pl.isGuarding){ctx.strokeStyle='rgba(150,220,255,0.8)';ctx.lineWidth=3*s;ctx.beginPath();ctx.arc(px+pw/2,py+ph/2,pw*0.8,0,Math.PI*2);ctx.stroke();}
   }
 
@@ -680,6 +684,28 @@ function drawPlayer(pl,sx,sy,s){
   ctx.fillStyle=pl.isP2?'#4af':'#f77';
   ctx.font=`${Math.round(9*s)}px sans-serif`; ctx.textAlign='center';
   ctx.fillText(pl.isP2?'P2':'P1',px+pw/2,py-7*s);
+  ctx.restore();
+}
+
+// 攻撃エフェクト：キャラ色の腕＋こぶしを前方に突き出す
+function drawPunch(px,py,pw,ph,facing,armColor,fistColor,s){
+  const dir=facing>0?1:-1;
+  const shoulderX=px+pw*(facing>0?0.7:0.3);
+  const armY=py+ph*0.45;
+  const reach=pw*0.8;
+  const fistX=shoulderX+dir*reach;
+  ctx.save();
+  ctx.lineCap='round';
+  // 腕
+  ctx.strokeStyle=armColor; ctx.lineWidth=7*s;
+  ctx.beginPath(); ctx.moveTo(shoulderX,armY); ctx.lineTo(fistX,armY); ctx.stroke();
+  // こぶし
+  ctx.fillStyle=fistColor;
+  ctx.beginPath(); ctx.arc(fistX,armY,pw*0.24,0,Math.PI*2); ctx.fill();
+  ctx.strokeStyle='rgba(0,0,0,0.35)'; ctx.lineWidth=1.5*s; ctx.stroke();
+  // 指の節（こぶしらしさ）
+  ctx.strokeStyle='rgba(0,0,0,0.25)'; ctx.lineWidth=1*s;
+  ctx.beginPath(); ctx.moveTo(fistX+dir*pw*0.05,armY-pw*0.13); ctx.lineTo(fistX+dir*pw*0.05,armY+pw*0.13); ctx.stroke();
   ctx.restore();
 }
 
