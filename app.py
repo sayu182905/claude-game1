@@ -294,12 +294,15 @@ def tick_room(room_id):
             # 攻撃クールダウン倍率（トカゲは1/1.25で早く撃てる）
             cd_factor = (1.0 / CONFIG["lizard_speed_factor"]) if pl["char"] == "lizard" else 1.0
 
+            # 石の必殺技（隕石！！）発動中は攻撃を使えない
+            can_attack = not (pl["char"] == "rock" and pl["ult_active"])
+
             # 弱攻撃
-            if k.get("weak") and pl["atkCd"] == 0:
+            if can_attack and k.get("weak") and pl["atkCd"] == 0:
                 do_attack(pl, opp, CONFIG["weak_dmg"], max(1, int(CONFIG["weak_cd"] * cd_factor)), state, room_id)
 
             # 強攻撃
-            if k.get("strong") and pl["atkCd"] == 0:
+            if can_attack and k.get("strong") and pl["atkCd"] == 0:
                 do_attack(pl, opp, CONFIG["strong_dmg"], max(1, int(CONFIG["strong_cd"] * cd_factor)), state, room_id)
 
             # 必殺技
