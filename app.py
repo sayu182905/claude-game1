@@ -68,6 +68,7 @@ CONFIG = {
 
     # キャラ固有のパッシブ特性
     "lizard_contact_dmg_per_sec": 1,      # トカゲ：接触1秒ごとに与えるダメージ
+    "lizard_speed_factor": 1.25,          # トカゲ：移動・ジャンプ・攻撃速度の倍率
     "rock_dmg_resist": 0.5,               # 石：受ける通常ダメージの倍率（0.5=半減）
     "rock_move_factor": 0.75,             # 石：移動速度の倍率
 }
@@ -266,8 +267,13 @@ def tick_room(room_id):
             pl["isGuarding"] = False
         else:
             # ブラックホールに吸われている側は左右移動で抜け出せない
-            # 石キャラは移動速度が遅い（パッシブ）
-            move_speed = CONFIG["move_speed"] * (CONFIG["rock_move_factor"] if pl["char"] == "rock" else 1.0)
+            # キャラパッシブ：石は移動0.75倍／トカゲは移動1.25倍
+            if pl["char"] == "rock":
+                move_speed = CONFIG["move_speed"] * CONFIG["rock_move_factor"]
+            elif pl["char"] == "lizard":
+                move_speed = CONFIG["move_speed"] * CONFIG["lizard_speed_factor"]
+            else:
+                move_speed = CONFIG["move_speed"]
             if bh_target:
                 pl["vx"] *= 0.7
             elif k.get("left"):
@@ -278,18 +284,23 @@ def tick_room(room_id):
                 pl["vx"] *= 0.7
 
             # ブラックホールに吸われている側はジャンプもできない
+            # トカゲはジャンプ初速も1.25倍（より高く飛ぶ）
+            jump_vy = CONFIG["jump_vy"] * (CONFIG["lizard_speed_factor"] if pl["char"] == "lizard" else 1.0)
             if k.get("jump") and pl["onGround"] and not bh_target:
-                pl["vy"] = CONFIG["jump_vy"]
+                pl["vy"] = jump_vy
 
             pl["isGuarding"] = bool(k.get("guard"))
 
+            # 攻撃クールダウン倍率（トカゲは1/1.25で早く撃てる）
+            cd_factor = (1.0 / CONFIG["lizard_speed_factor"]) if pl["char"] == "lizard" else 1.0
+
             # 弱攻撃
             if k.get("weak") and pl["atkCd"] == 0:
-                do_attack(pl, opp, CONFIG["weak_dmg"], CONFIG["weak_cd"], state, room_id)
+                do_attack(pl, opp, CONFIG["weak_dmg"], max(1, int(CONFIG["weak_cd"] * cd_factor)), state, room_id)
 
             # 強攻撃
             if k.get("strong") and pl["atkCd"] == 0:
-                do_attack(pl, opp, CONFIG["strong_dmg"], CONFIG["strong_cd"], state, room_id)
+                do_attack(pl, opp, CONFIG["strong_dmg"], max(1, int(CONFIG["strong_cd"] * cd_factor)), state, room_id)
 
             # 必殺技
             if k.get("ult") and pl["atkCd"] == 0 and pl["sp"] >= CONFIG["ult_cost"] and not pl["ult_active"]:
