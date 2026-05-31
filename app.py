@@ -35,8 +35,8 @@ CONFIG = {
     "strong_dmg": 10,
     "strong_cd": 60,
     "guard_divisor": 3,          # ガード時ダメージを 1/n に
-    "knockback_vx_factor": 9.0,  # 吹っ飛び横速度 = ダメージ × この値（×5強化）
-    "knockback_vy_factor": 3.5,  # 打ち上げ速度 = ダメージ × この値（×5強化）
+    "knockback_vx_factor": 4.5,  # 吹っ飛び横速度 = ダメージ × この値（元の2.5倍）
+    "knockback_vy_factor": 1.75, # 打ち上げ速度 = ダメージ × この値（元の2.5倍）
 
     # 必殺ゲージ
     "ult_cost": 100,
@@ -68,7 +68,7 @@ CONFIG = {
 
     # キャラ固有のパッシブ特性
     "lizard_contact_dmg_per_sec": 1,      # トカゲ：接触1秒ごとに与えるダメージ
-    "lizard_speed_factor": 3.0,           # トカゲ：移動・ジャンプ・攻撃速度の倍率
+    "lizard_speed_factor": 3.0,           # トカゲ：移動速度・攻撃速度の倍率（ジャンプは全キャラ共通）
     "lizard_dmg_factor": 1.5,             # トカゲ：与える攻撃ダメージの倍率
     "macho_dmg_factor": 2.0,              # マッチョ：与える通常攻撃ダメージの倍率（ダンベルは別パラメータ）
     "rock_dmg_resist": 0.5,               # 石：受ける通常ダメージの倍率（0.5=半減）
@@ -286,10 +286,9 @@ def tick_room(room_id):
                 pl["vx"] *= 0.7
 
             # ブラックホールに吸われている側はジャンプもできない
-            # トカゲはジャンプ初速も1.25倍（より高く飛ぶ）
-            jump_vy = CONFIG["jump_vy"] * (CONFIG["lizard_speed_factor"] if pl["char"] == "lizard" else 1.0)
+            # ジャンプ初速は全キャラ共通（トカゲもここは普通）
             if k.get("jump") and pl["onGround"] and not bh_target:
-                pl["vy"] = jump_vy
+                pl["vy"] = CONFIG["jump_vy"]
 
             pl["isGuarding"] = bool(k.get("guard"))
 
