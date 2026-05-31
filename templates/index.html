@@ -4,6 +4,15 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
 <title>バトルアリーナ</title>
+<!-- iPhone ホーム追加 → 全画面ゲーム化 -->
+<link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
+<link rel="icon" href="/static/apple-touch-icon.png">
+<link rel="manifest" href="/static/manifest.json">
+<meta name="apple-mobile-web-app-title" content="バトル">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#0d0d1a">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.min.js"></script>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
@@ -221,6 +230,21 @@ html, body { width: 100%; height: 100%; height: 100dvh; background: #0a0a14; ove
       <div class="cname">かえる＆人間＆とけい</div>
       <div class="skill">必殺: The World</div>
     </div>
+    <div class="char-card" data-char="lizard" onclick="selectChar('lizard')">
+      <div class="icon">🦎</div>
+      <div class="cname">トカゲ</div>
+      <div class="skill">必殺: 毒へびー！<br>接触1dmg/秒</div>
+    </div>
+    <div class="char-card" data-char="rock" onclick="selectChar('rock')">
+      <div class="icon">🪨</div>
+      <div class="cname">石</div>
+      <div class="skill">必殺: 隕石！！<br>被ダメ半減 / 移動0.75</div>
+    </div>
+    <div class="char-card" data-char="macho" onclick="selectChar('macho')">
+      <div class="icon">💪</div>
+      <div class="cname">マッチョなおじさん</div>
+      <div class="skill">必殺: マッチョパワー！！！</div>
+    </div>
   </div>
   <div style="display:flex;flex-direction:column;align-items:center;gap:10px;width:100%;max-width:320px;">
     <input id="room-input" type="text" placeholder="ルームID（例: room1）"
@@ -372,8 +396,8 @@ function scheduleBGM(){
 
 /* ===== SOCKET ===== */
 const socket = io();
-const CHAR_NAMES = {slime:'血まみれスライム', frog:'かえる＆人間＆とけい'};
-const CHAR_ICONS = {slime:'🔴', frog:'🐸'};
+const CHAR_NAMES = {slime:'血まみれスライム', frog:'かえる＆人間＆とけい', lizard:'トカゲ', rock:'石', macho:'マッチョなおじさん'};
+const CHAR_ICONS = {slime:'🔴', frog:'🐸', lizard:'🦎', rock:'🪨', macho:'💪'};
 let myPlayer = 0, currentRoom = '', gameStarted = false;
 let selectedChar = 'slime', myChar = 'slime';
 let lastState = null;
@@ -621,6 +645,18 @@ function drawState(state){
   if(state.p1) drawPlayer(state.p1,sx,sy,s);
   if(state.p2) drawPlayer(state.p2,sx,sy,s);
 
+  // 投擲物（ダンベル）
+  if(state.projectiles && state.projectiles.length){
+    for(const p of state.projectiles){
+      drawDumbbell(sx(p.x), sy(p.y), s, p.vx<0);
+    }
+  }
+  // 隕石（埋まり）演出
+  if(state.meteor){
+    const tgt = state.meteor.target==='p1' ? state.p1 : state.p2;
+    if(tgt) drawMeteorPile(tgt, sx, sy, s, state.meteor);
+  }
+
   if(state.world||state.p1?.frozen>0||state.p2?.frozen>0){
     ctx.fillStyle='rgba(100,200,255,0.07)'; ctx.fillRect(0,0,canvas.width,canvas.height);
     ctx.fillStyle='rgba(150,230,255,0.7)';
@@ -649,7 +685,7 @@ function drawPlayer(pl,sx,sy,s){
     for(let i=0;i<3;i++){ctx.beginPath();ctx.ellipse(px+pw*(0.3+i*0.2),py+ph-cr*0.4+4*s,2.5*s,5*s,0,0,Math.PI*2);ctx.fill();}
     if(pl.atkAnim>0){drawPunch(px,py,pw,ph,pl.facing,'#a31818','#e23b3b',s);}
     if(pl.isGuarding){ctx.strokeStyle='rgba(255,200,200,0.8)';ctx.lineWidth=3*s;ctx.beginPath();ctx.arc(px+pw/2,py+ph/2,pw*0.8,0,Math.PI*2);ctx.stroke();}
-  } else {
+  } else if(pl.char==='frog'){
     ctx.fillStyle=pl.isGuarding?'#88ccff':'#2a7a2a';
     ctx.fillRect(px+pw*0.2,py+ph*0.35,pw*0.6,ph*0.55);
     ctx.fillStyle=pl.isGuarding?'#88ff88':'#3db33d';
@@ -676,6 +712,29 @@ function drawPlayer(pl,sx,sy,s){
     ctx.fillRect(px+pw*0.55,py+ph*0.88,pw*0.2,ph*0.12);
     if(pl.atkAnim>0){drawPunch(px,py,pw,ph,pl.facing,'#1a5c1a','#3db33d',s);}
     if(pl.isGuarding){ctx.strokeStyle='rgba(150,220,255,0.8)';ctx.lineWidth=3*s;ctx.beginPath();ctx.arc(px+pw/2,py+ph/2,pw*0.8,0,Math.PI*2);ctx.stroke();}
+  } else if(pl.char==='lizard'){
+    drawLizard(px,py,pw,ph,pl,s);
+  } else if(pl.char==='rock'){
+    drawRock(px,py,pw,ph,pl,s);
+  } else if(pl.char==='macho'){
+    drawMacho(px,py,pw,ph,pl,s);
+  }
+
+  // 毒状態：紫色の靄を被せる
+  if(pl.poisoned>0){
+    const pulse = 0.35 + 0.12*Math.sin(Date.now()/180);
+    ctx.fillStyle=`rgba(160,60,200,${pulse})`;
+    ctx.beginPath();
+    ctx.ellipse(px+pw/2, py+ph/2, pw*0.6, ph*0.6, 0, 0, Math.PI*2);
+    ctx.fill();
+    // 毒の泡
+    for(let i=0;i<3;i++){
+      const t=Date.now()/400 + i*2.1;
+      const bx=px+pw*(0.3+0.4*((Math.sin(t)+1)/2));
+      const by=py+ph*0.2 - ((Date.now()/30+i*40)%60)*0.2*s;
+      ctx.fillStyle='rgba(180,80,220,0.7)';
+      ctx.beginPath(); ctx.arc(bx,by,2.5*s,0,Math.PI*2); ctx.fill();
+    }
   }
 
   ctx.globalAlpha=1;
@@ -685,6 +744,179 @@ function drawPlayer(pl,sx,sy,s){
   ctx.font=`${Math.round(9*s)}px sans-serif`; ctx.textAlign='center';
   ctx.fillText(pl.isP2?'P2':'P1',px+pw/2,py-7*s);
   ctx.restore();
+}
+
+// ===== キャラ別の描画 =====
+
+// トカゲ：赤と黒の2色、横向きの体＋尻尾
+function drawLizard(px,py,pw,ph,pl,s){
+  const dir=pl.facing>0?1:-1;
+  const cx=px+pw/2, by=py+ph*0.6;
+  // 尻尾（後方）
+  ctx.strokeStyle='#7a0e0e'; ctx.lineWidth=6*s; ctx.lineCap='round';
+  ctx.beginPath();
+  ctx.moveTo(cx-dir*pw*0.35, by+ph*0.2);
+  ctx.quadraticCurveTo(cx-dir*pw*0.7, by+ph*0.25, cx-dir*pw*0.9, by+ph*0.05);
+  ctx.stroke();
+  // 体（黒の縁＋赤の本体）
+  ctx.fillStyle='#1a1a1a';
+  ctx.beginPath(); ctx.ellipse(cx, by, pw*0.42, ph*0.32, 0, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle=pl.isGuarding?'#ff7a7a':'#c92020';
+  ctx.beginPath(); ctx.ellipse(cx, by, pw*0.36, ph*0.27, 0, 0, Math.PI*2); ctx.fill();
+  // 黒い斑点
+  ctx.fillStyle='#1a1a1a';
+  for(let i=0;i<4;i++){
+    ctx.beginPath(); ctx.arc(cx+(i-1.5)*pw*0.13, by+(i%2===0?-3:3)*s, 2.2*s, 0, Math.PI*2); ctx.fill();
+  }
+  // 頭
+  const hx=cx+dir*pw*0.42, hy=by-ph*0.05;
+  ctx.fillStyle='#c92020';
+  ctx.beginPath(); ctx.ellipse(hx, hy, pw*0.22, ph*0.18, 0, 0, Math.PI*2); ctx.fill();
+  ctx.strokeStyle='#1a1a1a'; ctx.lineWidth=1.5*s; ctx.stroke();
+  // 目
+  ctx.fillStyle='#ffd84d'; ctx.beginPath(); ctx.arc(hx+dir*pw*0.05, hy-ph*0.04, 3*s, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle='#000'; ctx.beginPath(); ctx.ellipse(hx+dir*pw*0.06, hy-ph*0.04, 1*s, 2.5*s, 0, 0, Math.PI*2); ctx.fill();
+  // 舌（ちらちら）
+  if((Date.now()/220|0)%2===0){
+    ctx.strokeStyle='#ff5577'; ctx.lineWidth=1.5*s; ctx.lineCap='round';
+    ctx.beginPath(); ctx.moveTo(hx+dir*pw*0.18, hy+ph*0.03); ctx.lineTo(hx+dir*pw*0.34, hy+ph*0.05); ctx.stroke();
+  }
+  // 4本足
+  ctx.fillStyle='#1a1a1a';
+  for(const fx of [cx-pw*0.25, cx+pw*0.2]){
+    ctx.fillRect(fx, by+ph*0.18, 5*s, 8*s);
+    ctx.fillRect(fx+pw*0.08, by+ph*0.18, 5*s, 8*s);
+  }
+  // 攻撃：赤い手
+  if(pl.atkAnim>0){drawPunch(px,py,pw,ph,pl.facing,'#7a0e0e','#e23b3b',s);}
+  if(pl.isGuarding){ctx.strokeStyle='rgba(255,180,180,0.8)';ctx.lineWidth=3*s;ctx.beginPath();ctx.arc(px+pw/2,py+ph/2,pw*0.8,0,Math.PI*2);ctx.stroke();}
+}
+
+// 石：1個だけ目がついた灰色のひび割れた岩
+function drawRock(px,py,pw,ph,pl,s){
+  const cx=px+pw/2, cy=py+ph*0.55;
+  // 本体（不整形な岩）
+  ctx.fillStyle=pl.isGuarding?'#c9c9d2':'#8a8a92';
+  ctx.beginPath();
+  ctx.moveTo(cx-pw*0.42, cy+ph*0.05);
+  ctx.lineTo(cx-pw*0.35, cy-ph*0.30);
+  ctx.lineTo(cx-pw*0.10, cy-ph*0.42);
+  ctx.lineTo(cx+pw*0.20, cy-ph*0.38);
+  ctx.lineTo(cx+pw*0.42, cy-ph*0.15);
+  ctx.lineTo(cx+pw*0.40, cy+ph*0.15);
+  ctx.lineTo(cx+pw*0.10, cy+ph*0.40);
+  ctx.lineTo(cx-pw*0.25, cy+ph*0.35);
+  ctx.closePath(); ctx.fill();
+  ctx.strokeStyle='#5a5a62'; ctx.lineWidth=1.5*s; ctx.stroke();
+  // ひび
+  ctx.strokeStyle='#3d3d44'; ctx.lineWidth=1*s;
+  ctx.beginPath(); ctx.moveTo(cx-pw*0.2, cy-ph*0.3); ctx.lineTo(cx-pw*0.05, cy-ph*0.05); ctx.lineTo(cx-pw*0.18, cy+ph*0.18); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(cx+pw*0.1, cy-ph*0.32); ctx.lineTo(cx+pw*0.22, cy-ph*0.10); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(cx+pw*0.25, cy+ph*0.05); ctx.lineTo(cx+pw*0.35, cy+ph*0.20); ctx.stroke();
+  // 目（1つだけ）
+  const ex=cx+pl.facing*pw*0.05, ey=cy-ph*0.10;
+  ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(ex, ey, pw*0.13, 0, Math.PI*2); ctx.fill();
+  ctx.strokeStyle='#222'; ctx.lineWidth=1*s; ctx.stroke();
+  ctx.fillStyle='#222'; ctx.beginPath(); ctx.arc(ex+pl.facing*pw*0.04, ey, pw*0.06, 0, Math.PI*2); ctx.fill();
+  // 攻撃：灰色の手
+  if(pl.atkAnim>0){drawPunch(px,py,pw,ph,pl.facing,'#5a5a62','#a0a0a8',s);}
+  if(pl.isGuarding){ctx.strokeStyle='rgba(200,200,220,0.8)';ctx.lineWidth=3*s;ctx.beginPath();ctx.arc(px+pw/2,py+ph/2,pw*0.85,0,Math.PI*2);ctx.stroke();}
+}
+
+// マッチョなおじさん：緑肌で黒パンツ
+function drawMacho(px,py,pw,ph,pl,s){
+  const cx=px+pw/2;
+  const skin=pl.isGuarding?'#9fe88f':'#3fa84a';
+  const skinDark='#266b2c';
+  // 脚
+  ctx.fillStyle=skin;
+  ctx.fillRect(px+pw*0.25, py+ph*0.78, pw*0.18, ph*0.22);
+  ctx.fillRect(px+pw*0.57, py+ph*0.78, pw*0.18, ph*0.22);
+  // 黒パンツ
+  ctx.fillStyle='#0a0a0a';
+  ctx.beginPath();
+  ctx.moveTo(px+pw*0.20, py+ph*0.68);
+  ctx.lineTo(px+pw*0.80, py+ph*0.68);
+  ctx.lineTo(px+pw*0.78, py+ph*0.82);
+  ctx.lineTo(px+pw*0.22, py+ph*0.82);
+  ctx.closePath(); ctx.fill();
+  // 胴体（逆三角形ぽい）
+  ctx.fillStyle=skin;
+  ctx.beginPath();
+  ctx.moveTo(px+pw*0.10, py+ph*0.32);
+  ctx.lineTo(px+pw*0.90, py+ph*0.32);
+  ctx.lineTo(px+pw*0.80, py+ph*0.70);
+  ctx.lineTo(px+pw*0.20, py+ph*0.70);
+  ctx.closePath(); ctx.fill();
+  // 胸筋ライン
+  ctx.strokeStyle=skinDark; ctx.lineWidth=1.5*s;
+  ctx.beginPath(); ctx.moveTo(cx, py+ph*0.35); ctx.lineTo(cx, py+ph*0.55); ctx.stroke();
+  ctx.beginPath(); ctx.arc(cx-pw*0.15, py+ph*0.45, pw*0.12, -0.3, Math.PI+0.3); ctx.stroke();
+  ctx.beginPath(); ctx.arc(cx+pw*0.15, py+ph*0.45, pw*0.12, -0.3-Math.PI, 0.3); ctx.stroke();
+  // 腕（太い）
+  ctx.fillStyle=skin;
+  ctx.beginPath(); ctx.ellipse(px+pw*0.08, py+ph*0.50, pw*0.10, ph*0.18, 0, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(px+pw*0.92, py+ph*0.50, pw*0.10, ph*0.18, 0, 0, Math.PI*2); ctx.fill();
+  // 頭
+  ctx.fillStyle=skin;
+  ctx.beginPath(); ctx.ellipse(cx, py+ph*0.18, pw*0.22, ph*0.17, 0, 0, Math.PI*2); ctx.fill();
+  // 目
+  ctx.fillStyle='#fff';
+  ctx.beginPath(); ctx.arc(cx-pw*0.08, py+ph*0.17, 2.5*s, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(cx+pw*0.08, py+ph*0.17, 2.5*s, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle='#000';
+  ctx.beginPath(); ctx.arc(cx-pw*0.08, py+ph*0.17, 1.2*s, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(cx+pw*0.08, py+ph*0.17, 1.2*s, 0, Math.PI*2); ctx.fill();
+  // 口（ニカッ）
+  ctx.strokeStyle='#0a0a0a'; ctx.lineWidth=1.5*s;
+  ctx.beginPath(); ctx.arc(cx, py+ph*0.24, pw*0.07, 0.2, Math.PI-0.2); ctx.stroke();
+  // 攻撃：緑の手
+  if(pl.atkAnim>0){drawPunch(px,py,pw,ph,pl.facing,skinDark,skin,s);}
+  if(pl.isGuarding){ctx.strokeStyle='rgba(180,255,180,0.8)';ctx.lineWidth=3*s;ctx.beginPath();ctx.arc(px+pw/2,py+ph/2,pw*0.85,0,Math.PI*2);ctx.stroke();}
+}
+
+// ダンベル
+function drawDumbbell(sx,sy,s,flip){
+  ctx.save();
+  ctx.translate(sx,sy);
+  // 棒
+  ctx.fillStyle='#2a2a30'; ctx.fillRect(-12*s, -2*s, 24*s, 4*s);
+  // おもり
+  ctx.fillStyle='#4a4a55';
+  ctx.fillRect(-16*s, -7*s, 6*s, 14*s);
+  ctx.fillRect(10*s, -7*s, 6*s, 14*s);
+  ctx.strokeStyle='#22222a'; ctx.lineWidth=1*s;
+  ctx.strokeRect(-16*s, -7*s, 6*s, 14*s);
+  ctx.strokeRect(10*s, -7*s, 6*s, 14*s);
+  ctx.restore();
+}
+
+// 隕石の積み重ね（被害者の上に石が積もる）
+function drawMeteorPile(target,sx,sy,s,meteor){
+  const t = (Date.now()/1000) - meteor.t_start;
+  const prog = Math.min(1, t / meteor.duration);
+  const cx = sx(target.x + 21);
+  const baseY = sy(target.y + 50);
+  const totalH = 60*s * prog;
+  // 落ちてくる石の山
+  const rocks = [
+    [-18, 0, 12], [-6, -10, 14], [10, -4, 13], [-12, -22, 11], [4, -28, 12], [-2, -42, 10]
+  ];
+  for(const [rx,ry,rr] of rocks){
+    const fy = baseY + ry*s*prog;
+    if(baseY - fy > totalH) continue;
+    ctx.fillStyle='#7a7a82';
+    ctx.beginPath(); ctx.ellipse(cx + rx*s, fy, rr*s, rr*0.8*s, 0, 0, Math.PI*2); ctx.fill();
+    ctx.strokeStyle='#4a4a52'; ctx.lineWidth=1*s; ctx.stroke();
+    // ひび
+    ctx.strokeStyle='#3a3a42'; ctx.lineWidth=0.8*s;
+    ctx.beginPath(); ctx.moveTo(cx+(rx-4)*s, fy-2*s); ctx.lineTo(cx+(rx+2)*s, fy+4*s); ctx.stroke();
+  }
+  // カウントダウン：残り秒数
+  const remain = Math.max(0, meteor.duration - t);
+  ctx.fillStyle='rgba(255,80,80,0.9)';
+  ctx.font=`bold ${Math.round(16*s)}px sans-serif`; ctx.textAlign='center';
+  ctx.fillText('💥 '+remain.toFixed(1)+'s', cx, sy(target.y - 10));
 }
 
 // 攻撃エフェクト：キャラ色の腕＋こぶしを前方に突き出す

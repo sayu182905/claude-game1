@@ -50,6 +50,26 @@ CONFIG = {
 
     # 必殺技：The World
     "the_world_duration_sec": 4,
+
+    # 必殺技：毒へびー！（トカゲ）
+    "poison_duration_sec": 20,            # 毒状態の継続時間
+    "poison_tick_interval_sec": 2,        # 何秒ごとにダメージが入るか
+    "poison_tick_dmg": 1,                 # 1ティックのダメージ
+
+    # 必殺技：隕石！！（石）
+    "meteor_duration_sec": 5,             # 相手を埋めて拘束する時間
+    "meteor_dmg": 20,                     # 爆発ダメージ
+
+    # 必殺技：マッチョパワー！！！（マッチョ）
+    "dumbbell_duration_sec": 10,          # ダンベル投擲時間
+    "dumbbell_per_sec": 3,                # 1秒あたりの投擲数
+    "dumbbell_dmg": 5,                    # ダンベル1個のダメージ
+    "dumbbell_speed": 7,                  # ダンベルの飛翔速度（px/frame）
+
+    # キャラ固有のパッシブ特性
+    "lizard_contact_dmg_per_sec": 1,      # トカゲ：接触1秒ごとに与えるダメージ
+    "rock_dmg_resist": 0.5,               # 石：受ける通常ダメージの倍率（0.5=半減）
+    "rock_move_factor": 0.75,             # 石：移動速度の倍率
 }
 
 # =====================================================================
@@ -58,8 +78,11 @@ CONFIG = {
 #   ult  : 必殺技の種類（"blackhole" / "the_world"）
 # =====================================================================
 CHARACTERS = {
-    "slime": {"name": "血まみれスライム", "ult": "blackhole"},
-    "frog":  {"name": "かえる＆人間＆とけい", "ult": "the_world"},
+    "slime":  {"name": "血まみれスライム", "ult": "blackhole"},
+    "frog":   {"name": "かえる＆人間＆とけい", "ult": "the_world"},
+    "lizard": {"name": "トカゲ", "ult": "poison"},
+    "rock":   {"name": "石", "ult": "meteor"},
+    "macho":  {"name": "マッチョなおじさん", "ult": "dumbbell"},
 }
 DEFAULT_CHAR = "slime"
 
@@ -88,6 +111,8 @@ def make_game_state(p1_char=DEFAULT_CHAR, p2_char="frog"):
         "p2": make_player(CONFIG["p2_spawn_x"], True, p2_char),
         "bh": None,
         "world": None,
+        "meteor": None,        # {"target": "p1"|"p2", "t_start": time, "duration": sec}
+        "projectiles": [],     # [{x,y,vx,owner:"p1"|"p2",dmg,type:"dumbbell"}]
     }
 
 def make_player(x, is_p2, char=DEFAULT_CHAR):
@@ -102,6 +127,9 @@ def make_player(x, is_p2, char=DEFAULT_CHAR):
         "frozen": 0, "isGuarding": False,
         "ult_active": False,
         "pending_kb_vx": 0, "pending_kb_vy": 0,  # 停止中に受けたノックバック（解除時に反映）
+        "poisoned": 0,                          # 毒状態の残りフレーム数（0で毒なし）
+        "buried": 0,                            # 隕石で埋まっている残りフレーム数（描画用）
+        "contact_acc": 0,                       # トカゲの接触ダメージ用カウンタ（フレーム）
         "keys": {}
     }
 
@@ -238,12 +266,14 @@ def tick_room(room_id):
             pl["isGuarding"] = False
         else:
             # ブラックホールに吸われている側は左右移動で抜け出せない
+            # 石キャラは移動速度が遅い（パッシブ）
+            move_speed = CONFIG["move_speed"] * (CONFIG["rock_move_factor"] if pl["char"] == "rock" else 1.0)
             if bh_target:
                 pl["vx"] *= 0.7
             elif k.get("left"):
-                pl["vx"] = -CONFIG["move_speed"]; pl["facing"] = -1
+                pl["vx"] = -move_speed; pl["facing"] = -1
             elif k.get("right"):
-                pl["vx"] = CONFIG["move_speed"]; pl["facing"] = 1
+                pl["vx"] = move_speed; pl["facing"] = 1
             else:
                 pl["vx"] *= 0.7
 
@@ -298,6 +328,31 @@ def tick_room(room_id):
                 if pl[cd] > 0:
                     pl[cd] -= 1
 
+        # 状態ティック（毒・埋まり：停止/拘束に関係なく時間経過）
+        if pl["poisoned"] > 0:
+            pl["poisoned"] -= 1
+        if pl["buried"] > 0:
+            pl["buried"] -= 1
+
+    # トカゲのパッシブ：体が毒なので、接触中は1秒ごとに相手へ1ダメージ
+    for src, dst in [(p1, p2), (p2, p1)]:
+        if src["char"] != "lizard":
+            continue
+        overlap = (abs((src["x"] + 21) - (dst["x"] + 21)) < 36 and
+                   abs((src["y"] + 25) - (dst["y"] + 25)) < 40)
+        if overlap and dst["hp"] > 0:
+            src["contact_acc"] += 1
+            if src["contact_acc"] >= 60:
+                src["contact_acc"] = 0
+                d = CONFIG["lizard_contact_dmg_per_sec"]
+                dst["hp"] = max(0, dst["hp"] - d)
+                socketio.emit('hit', {"dmg": d, "target": 2 if dst["isP2"] else 1, "guarded": False}, room=room_id)
+                if dst["hp"] <= 0:
+                    end_game(src, state, room_id)
+                    return
+        else:
+            src["contact_acc"] = 0
+
     # ブラックホール引き寄せ（発動者ではなく相手だけを引き寄せる。停止中は効かない）
     if state["bh"]:
         cx = STAGE_W / 2
@@ -305,12 +360,54 @@ def tick_room(room_id):
         if target["frozen"] <= 0:
             target["vx"] += (cx - (target["x"] + 21)) * CONFIG["blackhole_pull_factor"]
 
+    # 投擲物（ダンベル等）の更新：移動＋衝突判定
+    projs = state.get("projectiles") or []
+    if projs:
+        new_projs = []
+        for p in projs:
+            p["x"] += p["vx"]
+            # 画面外で消滅
+            if p["x"] < -30 or p["x"] > STAGE_W + 30:
+                continue
+            target = p2 if p["owner"] == "p1" else p1
+            # 中心同士の距離で当たり判定（ダンベルは横長20×縦12を想定）
+            if (abs(p["x"] - (target["x"] + 21)) < 28 and
+                    abs(p["y"] - (target["y"] + 25)) < 28):
+                d = p["dmg"]
+                if target["isGuarding"]:
+                    d = max(1, d // CONFIG["guard_divisor"])
+                # 石キャラのパッシブ：通常ダメージ（投擲含む）を半減
+                if target["char"] == "rock":
+                    d = max(1, int(d * CONFIG["rock_dmg_resist"]))
+                target["hp"] = max(0, target["hp"] - d)
+                target["hitAnim"] = 8
+                direction = 1 if p["vx"] > 0 else -1
+                kb_vx = direction * d * 0.6
+                kb_vy = -d * 0.3
+                if target["frozen"] > 0:
+                    target["pending_kb_vx"] += kb_vx
+                    target["pending_kb_vy"] += kb_vy
+                else:
+                    target["vx"] = kb_vx
+                    target["vy"] = kb_vy
+                    target["onGround"] = False
+                socketio.emit('hit', {"dmg": d, "target": 2 if target["isP2"] else 1, "guarded": target["isGuarding"]}, room=room_id)
+                if target["hp"] <= 0:
+                    caster = p1 if p["owner"] == "p1" else p2
+                    end_game(caster, state, room_id)
+                    return
+                continue  # 命中したダンベルは消える
+            new_projs.append(p)
+        state["projectiles"] = new_projs
+
     # 状態送信
     socketio.emit('state', {
         "p1": {k: v for k, v in p1.items() if k != "keys"},
         "p2": {k: v for k, v in p2.items() if k != "keys"},
         "bh": state["bh"],
         "world": state["world"],
+        "meteor": state.get("meteor"),
+        "projectiles": state.get("projectiles", []),
         "elapsed": int(time.time() - state["start_time"]) if state["start_time"] else 0
     }, room=room_id)
 
@@ -323,6 +420,9 @@ def do_attack(atk, def_, dmg, cd, state, room_id):
     d = dmg
     if def_["isGuarding"]:
         d = max(1, d // CONFIG["guard_divisor"])
+    # 石キャラのパッシブ：通常攻撃のダメージを半減
+    if def_["char"] == "rock":
+        d = max(1, int(d * CONFIG["rock_dmg_resist"]))
     def_["hp"] = max(0, def_["hp"] - d)
     # ゲージは相手にダメージを与えたときだけ溜まる（必殺発動中の本人は溜まらない＝多重発動防止）
     if not atk["ult_active"]:
@@ -396,6 +496,88 @@ def do_ult(atk, opp, state, room_id):
                 rooms[room_id]["state"]["world"] = None
                 socketio.emit('world_end', {}, room=room_id)
         threading.Thread(target=world_end, daemon=True).start()
+
+    elif ult == "poison":
+        # 毒へびー！：相手を毒状態にし、一定間隔でダメージ
+        opp["poisoned"] = CONFIG["poison_duration_sec"] * 60
+        def poison_tick():
+            ticks = CONFIG["poison_duration_sec"] // CONFIG["poison_tick_interval_sec"]
+            for _ in range(ticks):
+                time.sleep(CONFIG["poison_tick_interval_sec"])
+                if room_id not in rooms:
+                    return
+                st = rooms[room_id]["state"]
+                if not st["running"]:
+                    return
+                target = st[opp_key]
+                target["hp"] = max(0, target["hp"] - CONFIG["poison_tick_dmg"])
+                socketio.emit('hit', {"dmg": CONFIG["poison_tick_dmg"], "target": opp_num, "guarded": False}, room=room_id)
+                if target["hp"] <= 0:
+                    end_game(st[caster_key], st, room_id)
+                    return
+            if room_id in rooms:
+                rooms[room_id]["state"][caster_key]["ult_active"] = False
+                rooms[room_id]["state"][opp_key]["poisoned"] = 0
+        threading.Thread(target=poison_tick, daemon=True).start()
+
+    elif ult == "meteor":
+        # 隕石！！：相手を5秒間埋めて拘束→爆発で20ダメージ
+        dur = CONFIG["meteor_duration_sec"]
+        opp["frozen"] = dur * 60
+        opp["buried"] = dur * 60
+        state["meteor"] = {"target": opp_key, "t_start": time.time(), "duration": dur}
+        def meteor_end():
+            time.sleep(dur)
+            if room_id not in rooms:
+                return
+            st = rooms[room_id]["state"]
+            if not st["running"]:
+                return
+            target = st[opp_key]
+            d = CONFIG["meteor_dmg"]
+            target["hp"] = max(0, target["hp"] - d)
+            target["hitAnim"] = 12
+            target["frozen"] = 0
+            target["buried"] = 0
+            target["pending_kb_vx"] = 0
+            target["pending_kb_vy"] = 0
+            target["vx"] = 0
+            target["vy"] = -d * CONFIG["knockback_vy_factor"] * 0.5
+            target["onGround"] = False
+            socketio.emit('hit', {"dmg": d, "target": opp_num, "guarded": False}, room=room_id)
+            st["meteor"] = None
+            st[caster_key]["ult_active"] = False
+            if target["hp"] <= 0:
+                end_game(st[caster_key], st, room_id)
+        threading.Thread(target=meteor_end, daemon=True).start()
+
+    elif ult == "dumbbell":
+        # マッチョパワー！！！：10秒間、毎秒3個のダンベルを前方に投げ続ける
+        def dumbbell_throw():
+            interval = 1.0 / CONFIG["dumbbell_per_sec"]
+            total = int(CONFIG["dumbbell_per_sec"] * CONFIG["dumbbell_duration_sec"])
+            for _ in range(total):
+                if room_id not in rooms:
+                    return
+                st = rooms[room_id]["state"]
+                if not st["running"]:
+                    if room_id in rooms:
+                        rooms[room_id]["state"][caster_key]["ult_active"] = False
+                    return
+                caster_pl = st[caster_key]
+                facing = caster_pl["facing"]
+                st.setdefault("projectiles", []).append({
+                    "x": caster_pl["x"] + (42 if facing > 0 else 0),
+                    "y": caster_pl["y"] + 24,
+                    "vx": facing * CONFIG["dumbbell_speed"],
+                    "owner": caster_key,
+                    "dmg": CONFIG["dumbbell_dmg"],
+                    "type": "dumbbell",
+                })
+                time.sleep(interval)
+            if room_id in rooms:
+                rooms[room_id]["state"][caster_key]["ult_active"] = False
+        threading.Thread(target=dumbbell_throw, daemon=True).start()
 
 def end_game(winner, state, room_id):
     state["running"] = False
