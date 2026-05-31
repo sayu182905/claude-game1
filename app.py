@@ -35,8 +35,8 @@ CONFIG = {
     "strong_dmg": 10,
     "strong_cd": 60,
     "guard_divisor": 3,          # ガード時ダメージを 1/n に
-    "knockback_vx_factor": 1.8,  # 吹っ飛び横速度 = ダメージ × この値
-    "knockback_vy_factor": 0.7,  # 打ち上げ速度 = ダメージ × この値
+    "knockback_vx_factor": 9.0,  # 吹っ飛び横速度 = ダメージ × この値（×5強化）
+    "knockback_vy_factor": 3.5,  # 打ち上げ速度 = ダメージ × この値（×5強化）
 
     # 必殺ゲージ
     "ult_cost": 100,
@@ -68,7 +68,9 @@ CONFIG = {
 
     # キャラ固有のパッシブ特性
     "lizard_contact_dmg_per_sec": 1,      # トカゲ：接触1秒ごとに与えるダメージ
-    "lizard_speed_factor": 1.25,          # トカゲ：移動・ジャンプ・攻撃速度の倍率
+    "lizard_speed_factor": 3.0,           # トカゲ：移動・ジャンプ・攻撃速度の倍率
+    "lizard_dmg_factor": 1.5,             # トカゲ：与える攻撃ダメージの倍率
+    "macho_dmg_factor": 2.0,              # マッチョ：与える通常攻撃ダメージの倍率（ダンベルは別パラメータ）
     "rock_dmg_resist": 0.5,               # 石：受ける通常ダメージの倍率（0.5=半減）
     "rock_move_factor": 0.75,             # 石：移動速度の倍率
 }
@@ -432,6 +434,12 @@ def do_attack(atk, def_, dmg, cd, state, room_id):
     if dist > CONFIG["attack_range"] or v_dist > CONFIG["attack_v_range"]:
         return  # 空振り：横が遠い／高低差が大きいとゲージも溜まらない
     d = dmg
+    # トカゲのパッシブ：与えるダメージが1.5倍
+    if atk["char"] == "lizard":
+        d = max(1, int(round(d * CONFIG["lizard_dmg_factor"])))
+    # マッチョのパッシブ：通常攻撃ダメージが2倍
+    if atk["char"] == "macho":
+        d = max(1, int(round(d * CONFIG["macho_dmg_factor"])))
     if def_["isGuarding"]:
         d = max(1, d // CONFIG["guard_divisor"])
     # 石キャラのパッシブ：通常攻撃のダメージを半減
