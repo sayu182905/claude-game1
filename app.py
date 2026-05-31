@@ -35,8 +35,8 @@ CONFIG = {
     "strong_dmg": 10,
     "strong_cd": 60,
     "guard_divisor": 3,          # ガード時ダメージを 1/n に
-    "knockback_vx_factor": 4.5,  # 吹っ飛び横速度 = ダメージ × この値（元の2.5倍）
-    "knockback_vy_factor": 1.75, # 打ち上げ速度 = ダメージ × この値（元の2.5倍）
+    "knockback_vx_factor": 1.8,  # 吹っ飛び横速度 = ダメージ × この値
+    "knockback_vy_factor": 0.7,  # 打ち上げ速度 = ダメージ × この値
 
     # 必殺ゲージ
     "ult_cost": 100,
